@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "即刻一键分发",
+  "description": "在即刻网页版每条动态旁一键分发到 X、微博、豆瓣，自动带上原画质图片",
+  "version": "0.1.1",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "找不到「分发」按钮？点我立即恢复"
+  },
+  "background": {
+    "service_worker": "background/service.js"
+  },
+  "permissions": ["storage", "tabs", "tabGroups", "scripting"],
+  "content_scripts": [
+    {
+      "matches": ["https://web.okjike.com/*"],
+      "js": ["content/okjike.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": ["https://*/*"]
+}

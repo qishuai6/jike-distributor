@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>即刻一键分发</title>
+  <link rel="stylesheet" href="publish.css" />
+</head>
+<body>
+  <header class="hd">
+    <div class="hd-title">即刻一键分发</div>
+    <div class="hd-sub" id="srcSummary">正在获取发布数据…</div>
+  </header>
+
+  <main id="main" hidden>
+    <section class="block">
+      <div class="label-row">
+        <label class="lbl">正文</label>
+        <span class="count" id="charCount"></span>
+      </div>
+      <textarea id="contentInput" rows="7" placeholder="输入正文…"></textarea>
+      <div class="hint" id="xLimitHint" hidden></div>
+    </section>
+
+    <section class="block opts">
+      <label class="opt"><input type="checkbox" id="optTopic" checked /> 带话题标签</label>
+      <label class="opt"><input type="checkbox" id="optUrl" checked /> 附原帖链接</label>
+      <label class="opt"><input type="checkbox" id="optTruncate" checked /> X 超长自动截断</label>
+      <label class="opt"><input type="checkbox" id="optAuto" checked /> 自动点击发布</label>
+    </section>
+
+    <section class="block">
+      <div class="lbl">目标平台</div>
+      <div class="platforms">
+        <label class="plat" data-key="x"><input type="checkbox" checked /><span class="p-name">X</span><span class="p-meta" id="metaX"></span></label>
+        <label class="plat" data-key="weibo"><input type="checkbox" checked /><span class="p-name">微博</span><span class="p-meta" id="metaWeibo"></span></label>
+        <label class="plat" data-key="douban"><input type="checkbox" checked /><span class="p-name">豆瓣</span><span class="p-meta" id="metaDouban"></span></label>
+      </div>
+    </section>
+
+    <footer class="ft">
+      <button id="goBtn" class="primary">开始分发</button>
+      <button id="closeGroupBtn" class="ghost" hidden>关闭全部发布页</button>
+    </footer>
+    <div class="progress" id="progress"></div>
+  </main>
+
+  <div id="errBox" class="err" hidden></div>
+
+  <script src="publish.js"></script>
+</body>
+</html>
