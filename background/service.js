@@ -454,6 +454,25 @@ async function publishWeibo(data) {
     }
     await sleep(1500);
 
+    // 微博长文会在编辑器内部塞入「收起/展开」折叠控件，随正文一起发出 → 发布前清除
+    const cleanCollapse = () => {
+      let removed = false;
+      for (const el of Array.from(editor.querySelectorAll("*"))) {
+        const t = (el.textContent || "").trim();
+        if (el.children.length === 0 && (t === "收起" || t === "展开")) {
+          el.remove();
+          removed = true;
+        }
+      }
+      const last = editor.lastChild;
+      if (last && last.nodeType === 3 && /(收起|展开)\s*$/.test(last.textContent || "")) {
+        last.textContent = (last.textContent || "").replace(/(收起|展开)\s*$/, "");
+        removed = true;
+      }
+      return removed;
+    };
+    const cleaned = cleanCollapse();
+
     if (data.isAutoPublish) {
       status("等待发布按钮…");
       const btn = await waitFor(
@@ -470,11 +489,12 @@ async function publishWeibo(data) {
       if (btn.disabled || btn.getAttribute("aria-disabled") === "true") {
         return status("发布按钮不可用（可能正文超限或图片未传完），请手动检查", true);
       }
+      cleanCollapse(); // 折叠控件可能是编辑器展开后晚插入的，点击前再清一次
       btn.click();
       await sleep(4000);
-      status("已点击发布 ✓ 请稍候确认");
+      status(`已点击发布 ✓ 请稍候确认${cleaned ? "（已清除微博附加的「收起」）" : ""}`);
     } else {
-      status("内容已就绪，请手动点击发布");
+      status(`内容已就绪，请手动点击发布${cleaned ? "（已清除微博附加的「收起」）" : ""}`);
     }
   } catch (e) {
     status(`出错：${e}`, true);
