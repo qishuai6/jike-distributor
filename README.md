@@ -58,6 +58,7 @@ icons/                   图标
 
 ## 更新日志
 
+- **2026-10-21** v0.1.5 加固建发布页失败「Tabs cannot be edited right now (user may be dragging a tab)」（实测错误日志撞上）：标签拖拽中 Chrome 临时拒绝 tabs API，导致整轮分发创建失败。现 `tabs.create/update/group` 与 `tabGroups.update` 均带自动重试（500ms × 6 次，拖拽结束即恢复），重试耗尽才报错。
 - **2026-10-21** v0.1.4 修豆瓣自动发布报「未找到发布按钮」：豆瓣发布按钮实为 `a.bn-flat` 包 `input[type=button]`（文字在 value 属性、textContent 为空），旧逻辑只扫 `button/a.btn` 的文本永远落空（已在登录态豆瓣页实探 DOM 确认）。现从编辑器邻近容器逐层向外找按钮，`value`/`textContent` 双通道匹配并排除外链，补 disabled 等待；编辑器选择器补 `textarea[placeholder*="分享"]` 显式命中（placeholder 为「此刻你想要分享...」，此前靠裸 textarea 兜底碰运气）。
 - **2026-10-20** v0.1.3 豆瓣分发同样修末尾多出「收起」：与微博同机制（长文折叠控件混进编辑器内容流），给豆瓣 adapter 加同样的发布前后清洗逻辑。
 - **2026-10-20** v0.1.2 修微博分发末尾多出「收起」二字：微博发博框在长文时会往编辑器内部塞「收起/展开」折叠控件，程序化粘贴后被一起发出去。现于填写正文后与点击发布前各清洗一次（删掉编辑器内文本恰为「收起/展开」的末尾控件及裸文本尾巴），手动/自动发布模式均生效。

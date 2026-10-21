@@ -143,6 +143,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ---------------- 建标签页并注入 ----------------
 
+// Chrome 在标签拖拽中会临时拒绝 tabs API（"Tabs cannot be edited right now"），等拖拽结束重试
+const withTabRetry = async (fn, tries = 6) => {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= tries - 1 || !/cannot be edited right now/i.test(String(e))) throw e;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+};
+
 async function createTabsForPlatforms(platformKeys, data) {
   let groupId;
   const created = [];
@@ -159,7 +171,7 @@ async function createTabsForPlatforms(platformKeys, data) {
       isAutoPublish: !!data.isAutoPublish,
     };
 
-    const tab = await chrome.tabs.create({ url: p.injectUrl, active: false });
+    const tab = await withTabRetry(() => chrome.tabs.create({ url: p.injectUrl, active: false }));
 
     // 等页面加载完成（上限 15s，超时也尝试注入）
     await new Promise((resolve) => {
@@ -188,17 +200,19 @@ async function createTabsForPlatforms(platformKeys, data) {
       console.error(`[即刻分发] 注入 ${p.name} 失败:`, e);
     }
 
-    await chrome.tabs.update(tab.id, { active: true });
+    await withTabRetry(() => chrome.tabs.update(tab.id, { active: true }));
 
     try {
       if (groupId) {
-        await chrome.tabs.group({ tabIds: [tab.id], groupId });
+        await withTabRetry(() => chrome.tabs.group({ tabIds: [tab.id], groupId }));
       } else {
-        groupId = await chrome.tabs.group({ tabIds: [tab.id] });
-        await chrome.tabGroups.update(groupId, {
-          color: "yellow",
-          title: `即刻分发-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`,
-        });
+        groupId = await withTabRetry(() => chrome.tabs.group({ tabIds: [tab.id] }));
+        await withTabRetry(() =>
+          chrome.tabGroups.update(groupId, {
+            color: "yellow",
+            title: `即刻分发-${new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`,
+          })
+        );
       }
     } catch (e) {
       console.warn("[即刻分发] 标签分组失败（不影响发布）:", e);
