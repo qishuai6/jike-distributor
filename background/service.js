@@ -536,6 +536,7 @@ async function publishDouban(data) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const pickEditor = () =>
     document.querySelector("#isay textarea") ||
+    document.querySelector('textarea[placeholder*="分享"]') ||
     document.querySelector('textarea[placeholder*="想法"]') ||
     document.querySelector('textarea[placeholder*="说"]') ||
     document.querySelector('div[contenteditable="true"][role="textbox"]') ||
@@ -622,11 +623,35 @@ async function publishDouban(data) {
     const cleaned = cleanCollapse();
 
     if (data.isAutoPublish) {
-      const btn = await waitFor(
-        () => Array.from(document.querySelectorAll("button, a.btn")).find((b) => /发广播|发送|发布/.test(b.textContent || "")),
-        10000
-      );
-      if (!btn) return status("未找到发布按钮", true);
+      status("等待发布按钮…");
+      // 豆瓣发布按钮是 a.bn-flat 包 input[type=button]（文字在 value 属性，textContent 为空），
+      // 旧的 button/a.btn + textContent 匹配永远落空 → 优先在编辑器邻近容器找，value/textContent 双通道匹配
+      const labelOf = (b) =>
+        `${b.textContent || ""} ${b.value || ""} ${(b.getAttribute && b.getAttribute("value")) || ""}`;
+      const isPublishLabel = (b) => {
+        if (b.tagName === "A" && /^https?:/.test((b.getAttribute && b.getAttribute("href")) || "")) return false;
+        return /发布|发送|发广播/.test(labelOf(b)) && labelOf(b).trim().length <= 8;
+      };
+      const findBtn = () => {
+        let scope = editor.parentElement;
+        for (let i = 0; i < 5 && scope; i++) {
+          const hit = Array.from(
+            scope.querySelectorAll(
+              'button, input[type="button"], input[type="submit"], [role="button"], a[class*="btn"], a[class*="bn"], a'
+            )
+          ).find(isPublishLabel);
+          if (hit) return hit;
+          scope = scope.parentElement;
+        }
+        return null;
+      };
+      const btn = await waitFor(findBtn, 10000);
+      if (!btn) return status("未找到发布按钮（若页面改版请反馈 DOM 截图）", true);
+      let tries = 0;
+      while ((btn.disabled || btn.getAttribute("aria-disabled") === "true") && tries < 30) {
+        await sleep(1000);
+        tries++;
+      }
       cleanCollapse(); // 折叠控件可能是编辑器展开后晚插入的，点击前再清一次
       btn.click();
       await sleep(4000);
