@@ -4,10 +4,10 @@
 
 ## 安装
 
-1. 克隆或下载本仓库
+1. 从 [Releases](https://github.com/qishuai6/jike-distributor/releases/latest) 下载 `jike-distributor.zip` 并解压（或直接克隆本仓库）
 2. 打开 Chrome，地址栏输入 `chrome://extensions`
 3. 右上角打开「开发者模式」
-4. 点「加载已解压的扩展程序」，选择本仓库目录
+4. 点「加载已解压的扩展程序」，选择解压出的 `jike-distributor` 文件夹（克隆仓库的选仓库目录）
 5. 确保你已在同一 Chrome 里登录：**web.okjike.com、x.com、weibo.com、www.douban.com**
 
 ## 使用
@@ -59,6 +59,7 @@ icons/                   图标
 
 ## 更新日志
 
+- **2026-10-22** 挂上 GitHub Release：每个版本附 `jike-distributor.zip`，安装章节改为「下载 Release / 克隆仓库」双路径。
 - **2026-10-22** v0.2.0 新增分发渠道 **Threads**：走 threads.com 官方 `intent/post` 直链，发布弹窗直接预填正文（`injectUrl` 升级为按稿件动态生成），adapter 负责图片（最多 10 张，附件 input 不在时先点「图片」图标唤出）与点发布；正文未预填上时以 paste 兜底补填。正文限制 500 字，「超长自动截断」选项现同时作用于 X 与 Threads。
 - **2026-10-21** v0.1.6 修豆瓣 v0.1.4 后仍报「未找到发布按钮」：根因是发博工具栏（含发布按钮）要吃到真实输入事件才渲染，旧的 `value` 赋值＋合成 `input` 事件不触发展开，按钮 DOM 根本不存在（此前实探只验证了选择器匹配，未验证展开触发路径）。现正文改用 `execCommand("insertText")` 浏览器原生输入路径填写，并补发 keydown/keyup/click 事件兜底；按钮等待窗口放宽到 30s，期间用户手动点一下发博框即可自愈继续。
 - **2026-10-21** v0.1.5 加固建发布页失败「Tabs cannot be edited right now (user may be dragging a tab)」（实测错误日志撞上）：标签拖拽中 Chrome 临时拒绝 tabs API，导致整轮分发创建失败。现 `tabs.create/update/group` 与 `tabGroups.update` 均带自动重试（500ms × 6 次，拖拽结束即恢复），重试耗尽才报错。
