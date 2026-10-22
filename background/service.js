@@ -600,12 +600,24 @@ async function publishDouban(data) {
       }
     }
 
+    // 正文：textarea 必须走浏览器原生输入路径 —— 豆瓣发博工具栏（含发布按钮）要吃到真实输入
+    // 事件才会渲染，value 赋值 + 合成 input 不触发展开，发布按钮在 DOM 里根本不存在
     status("填写正文…");
     editor.focus();
     if (editor.tagName === "TEXTAREA") {
-      editor.value = data.content || "";
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
-      editor.dispatchEvent(new Event("change", { bubbles: true }));
+      editor.select();
+      let inserted = false;
+      try {
+        inserted = document.execCommand("insertText", false, data.content || "");
+      } catch (e) { /* execCommand 在极端场景可能抛错 */ }
+      if (!inserted) {
+        editor.value = data.content || "";
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      // 补键盘/点击事件：展开逻辑若绑在 keyup/click 上也能命中（合成事件无默认插入行为，不会重复输入）
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      editor.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
+      editor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     } else {
       const evt = new ClipboardEvent("paste", {
         bubbles: true,
@@ -636,30 +648,32 @@ async function publishDouban(data) {
     };
     const cleaned = cleanCollapse();
 
+    // 豆瓣发布按钮是 a.bn-flat 包 input[type=button]（文字在 value 属性，textContent 为空），
+    // 只扫 button/a.btn 的 textContent 永远落空 → 在编辑器邻近容器逐层向外找，value/textContent 双通道匹配
+    const labelOf = (b) =>
+      `${b.textContent || ""} ${b.value || ""} ${(b.getAttribute && b.getAttribute("value")) || ""}`;
+    const isPublishLabel = (b) => {
+      if (b.tagName === "A" && /^https?:/.test((b.getAttribute && b.getAttribute("href")) || "")) return false;
+      return /发布|发送|发广播/.test(labelOf(b)) && labelOf(b).trim().length <= 8;
+    };
+    const findBtn = () => {
+      let scope = editor.parentElement;
+      for (let i = 0; i < 5 && scope; i++) {
+        const hit = Array.from(
+          scope.querySelectorAll(
+            'button, input[type="button"], input[type="submit"], [role="button"], a[class*="btn"], a[class*="bn"], a'
+          )
+        ).find(isPublishLabel);
+        if (hit) return hit;
+        scope = scope.parentElement;
+      }
+      return null;
+    };
+
     if (data.isAutoPublish) {
-      status("等待发布按钮…");
-      // 豆瓣发布按钮是 a.bn-flat 包 input[type=button]（文字在 value 属性，textContent 为空），
-      // 旧的 button/a.btn + textContent 匹配永远落空 → 优先在编辑器邻近容器找，value/textContent 双通道匹配
-      const labelOf = (b) =>
-        `${b.textContent || ""} ${b.value || ""} ${(b.getAttribute && b.getAttribute("value")) || ""}`;
-      const isPublishLabel = (b) => {
-        if (b.tagName === "A" && /^https?:/.test((b.getAttribute && b.getAttribute("href")) || "")) return false;
-        return /发布|发送|发广播/.test(labelOf(b)) && labelOf(b).trim().length <= 8;
-      };
-      const findBtn = () => {
-        let scope = editor.parentElement;
-        for (let i = 0; i < 5 && scope; i++) {
-          const hit = Array.from(
-            scope.querySelectorAll(
-              'button, input[type="button"], input[type="submit"], [role="button"], a[class*="btn"], a[class*="bn"], a'
-            )
-          ).find(isPublishLabel);
-          if (hit) return hit;
-          scope = scope.parentElement;
-        }
-        return null;
-      };
-      const btn = await waitFor(findBtn, 10000);
+      status("等待发布按钮…（若约 10 秒后仍未继续，请用鼠标点一下发博框）");
+      // 工具栏若仍未展开，用户手动点击发博框即会渲染出按钮，30s 窗口内 MutationObserver 会立刻抓到
+      const btn = await waitFor(findBtn, 30000);
       if (!btn) return status("未找到发布按钮（若页面改版请反馈 DOM 截图）", true);
       let tries = 0;
       while ((btn.disabled || btn.getAttribute("aria-disabled") === "true") && tries < 30) {

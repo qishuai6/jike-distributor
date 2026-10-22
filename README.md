@@ -58,6 +58,7 @@ icons/                   图标
 
 ## 更新日志
 
+- **2026-10-21** v0.1.6 修豆瓣 v0.1.4 后仍报「未找到发布按钮」：根因是发博工具栏（含发布按钮）要吃到真实输入事件才渲染，旧的 `value` 赋值＋合成 `input` 事件不触发展开，按钮 DOM 根本不存在（此前实探只验证了选择器匹配，未验证展开触发路径）。现正文改用 `execCommand("insertText")` 浏览器原生输入路径填写，并补发 keydown/keyup/click 事件兜底；按钮等待窗口放宽到 30s，期间用户手动点一下发博框即可自愈继续。
 - **2026-10-21** v0.1.5 加固建发布页失败「Tabs cannot be edited right now (user may be dragging a tab)」（实测错误日志撞上）：标签拖拽中 Chrome 临时拒绝 tabs API，导致整轮分发创建失败。现 `tabs.create/update/group` 与 `tabGroups.update` 均带自动重试（500ms × 6 次，拖拽结束即恢复），重试耗尽才报错。
 - **2026-10-21** v0.1.4 修豆瓣自动发布报「未找到发布按钮」：豆瓣发布按钮实为 `a.bn-flat` 包 `input[type=button]`（文字在 value 属性、textContent 为空），旧逻辑只扫 `button/a.btn` 的文本永远落空（已在登录态豆瓣页实探 DOM 确认）。现从编辑器邻近容器逐层向外找按钮，`value`/`textContent` 双通道匹配并排除外链，补 disabled 等待；编辑器选择器补 `textarea[placeholder*="分享"]` 显式命中（placeholder 为「此刻你想要分享...」，此前靠裸 textarea 兜底碰运气）。
 - **2026-10-20** v0.1.3 豆瓣分发同样修末尾多出「收起」：与微博同机制（长文折叠控件混进编辑器内容流），给豆瓣 adapter 加同样的发布前后清洗逻辑。
