@@ -84,6 +84,9 @@ function buildContents(base, opts) {
   contents.x = x;
   contents.weibo = withTopicAndUrl(" #%s#");
   contents.douban = withTopicAndUrl(" #%s#");
+  let threads = withTopicAndUrl(" #%s");
+  if (opts.truncate && [...threads].length > 500) threads = [...threads].slice(0, 499).join("") + "…";
+  contents.threads = threads;
   return contents;
 }
 
@@ -109,6 +112,7 @@ chrome.runtime.sendMessage({ action: "JK_DIST_REQUEST_SYNC_DATA" }, (resp) => {
   $("metaX").textContent = platMeta(imgCount, 4);
   $("metaWeibo").textContent = platMeta(imgCount, 9);
   $("metaDouban").textContent = platMeta(imgCount, 9);
+  $("metaThreads").textContent = platMeta(imgCount, 10);
 
   $("main").hidden = false;
   chrome.storage.local.get(PREF_KEY).then((r) => applyPrefs(r && r[PREF_KEY])).catch(() => {});

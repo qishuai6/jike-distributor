@@ -26,6 +26,15 @@ const PLATFORMS = [
     maxImages: 9,
     injectFunction: publishDouban,
   },
+  {
+    key: "threads",
+    name: "Threads",
+    // 官方 intent 直链：发布弹窗直接预填正文，免去侧栏点「发帖」按钮（injectUrl 支持函数，按稿件生成）
+    injectUrl: (data) =>
+      `https://www.threads.com/intent/post?text=${encodeURIComponent(data.content || "")}`,
+    maxImages: 10,
+    injectFunction: publishThreads,
+  },
 ];
 
 let pendingData = null; // 发布窗数据
@@ -171,7 +180,12 @@ async function createTabsForPlatforms(platformKeys, data) {
       isAutoPublish: !!data.isAutoPublish,
     };
 
-    const tab = await withTabRetry(() => chrome.tabs.create({ url: p.injectUrl, active: false }));
+    const tab = await withTabRetry(() =>
+      chrome.tabs.create({
+        url: typeof p.injectUrl === "function" ? p.injectUrl(platformData) : p.injectUrl,
+        active: false,
+      })
+    );
 
     // 等页面加载完成（上限 15s，超时也尝试注入）
     await new Promise((resolve) => {
@@ -686,6 +700,149 @@ async function publishDouban(data) {
       status(`已点击发布 ✓ 请稍候确认${cleaned ? "（已清除豆瓣附加的「收起」）" : ""}`);
     } else {
       status(`内容已就绪，请手动点击发布${cleaned ? "（已清除豆瓣附加的「收起」）" : ""}`);
+    }
+  } catch (e) {
+    status(`出错：${e}`, true);
+  }
+}
+
+// ---------- Threads ----------
+// injectUrl 已用 intent/post 直链预填正文，adapter 只负责图片与发布
+async function publishThreads(data) {
+  const status = (text, isError) => {
+    let bar = document.getElementById("jk-dist-status");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "jk-dist-status";
+      bar.style.cssText =
+        "position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2147483647;background:#000;color:#fff;padding:6px 14px;border-radius:0 0 8px 8px;font:13px/1.4 system-ui;max-width:90vw;box-shadow:0 2px 8px rgba(0,0,0,.3)";
+      document.body.appendChild(bar);
+    }
+    if (isError) bar.style.background = "#d93025";
+    bar.textContent = `[即刻分发→Threads] ${text}`;
+  };
+  const waitFor = (check, timeout = 12000) =>
+    new Promise((resolve) => {
+      const first = check();
+      if (first) return resolve(first);
+      const mo = new MutationObserver(() => {
+        const el = check();
+        if (el) {
+          mo.disconnect();
+          clearTimeout(t);
+          resolve(el);
+        }
+      });
+      mo.observe(document.body, { childList: true, subtree: true });
+      const t = setTimeout(() => {
+        mo.disconnect();
+        resolve(null);
+      }, timeout);
+    });
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  try {
+    status("等待发帖框…");
+    // 只认可见的编辑器（intent 弹窗里可能有隐藏复本）
+    const editor = await waitFor(() =>
+      Array.from(document.querySelectorAll('div[contenteditable="true"][role="textbox"]')).find(
+        (e) => e.offsetParent !== null
+      )
+    );
+    if (!editor) {
+      status("未找到 Threads 发帖框（请确认已登录；若页面改版请反馈 DOM 截图）", true);
+      return;
+    }
+
+    // 图片：弹窗附件入口背后是 input[type=file]，找不到时先点「图片」图标唤出
+    if (data.images && data.images.length) {
+      status(`上传图片 0/${data.images.length}…`);
+      let fileInput = await waitFor(() => document.querySelector('input[type="file"][accept*="image"]'), 5000);
+      if (!fileInput) {
+        const mediaBtn = Array.from(document.querySelectorAll('button, [role="button"]')).find((b) =>
+          /图片|照片|相册|photo|media|image/i.test(b.getAttribute("aria-label") || "")
+        );
+        if (mediaBtn) {
+          mediaBtn.click();
+          await sleep(800);
+          fileInput = document.querySelector('input[type="file"][accept*="image"]');
+        }
+      }
+      if (!fileInput) {
+        status("未找到图片上传入口，仅发文字", true);
+      } else {
+        const dt = new DataTransfer();
+        let loaded = 0;
+        for (const img of data.images) {
+          let blob;
+          try {
+            const r = await fetch(img.url, { credentials: "omit" });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            blob = await r.blob();
+          } catch (e) {
+            const resp = await new Promise((resolve) => {
+              try {
+                chrome.runtime.sendMessage({ action: "JK_DIST_FETCH_IMAGE_DATA", url: img.url }, resolve);
+                setTimeout(() => resolve({ ok: false, error: "timeout" }), 20000);
+              } catch (e2) {
+                resolve({ ok: false, error: String(e2) });
+              }
+            });
+            if (!resp || !resp.ok) {
+              status(`图片 ${img.name} 下载失败：${resp?.error || e}`, true);
+              continue;
+            }
+            blob = await (await fetch(resp.dataUrl)).blob();
+          }
+          dt.items.add(new File([blob], img.name, { type: img.type }));
+          loaded++;
+        }
+        if (loaded > 0) {
+          fileInput.files = dt.files;
+          fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+          await sleep(3000);
+          status(`已上传 ${loaded} 张图片`);
+        }
+      }
+    }
+
+    // 正文：intent 直链已预填，只在没填上时补填（paste 原生路径）
+    status("检查正文…");
+    const existing = (editor.textContent || "").replace(/\u00a0/g, " ").trim();
+    if (existing !== (data.content || "").trim()) {
+      editor.focus();
+      const evt = new ClipboardEvent("paste", {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: new DataTransfer(),
+      });
+      evt.clipboardData.setData("text/plain", data.content || "");
+      editor.dispatchEvent(evt);
+      await sleep(1200);
+    }
+
+    if (data.isAutoPublish) {
+      status("等待发布按钮…");
+      const findBtn = () =>
+        Array.from(document.querySelectorAll('button, [role="button"]')).find((b) => {
+          const label = `${b.textContent || ""} ${b.getAttribute("aria-label") || ""}`.trim();
+          return /^(发布|post)$/i.test(label) || /^(分享|share)$/i.test(label);
+        });
+      const btn = await waitFor(findBtn, 15000);
+      if (!btn) return status("未找到发布按钮", true);
+      let tries = 0;
+      while ((btn.disabled || btn.getAttribute("aria-disabled") === "true") && tries < 30) {
+        await sleep(1000);
+        tries++;
+      }
+      if (btn.disabled || btn.getAttribute("aria-disabled") === "true") {
+        return status("发布按钮不可用（可能正文超 500 字上限或图片未传完），请手动检查", true);
+      }
+      btn.click();
+      await sleep(4000);
+      status("已点击发布 ✓ 请稍候确认");
+    } else {
+      status("内容已就绪，请手动点击发布");
     }
   } catch (e) {
     status(`出错：${e}`, true);
