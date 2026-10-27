@@ -519,8 +519,24 @@ async function publishWeibo(data) {
       }
       cleanCollapse(); // 折叠控件可能是编辑器展开后晚插入的，点击前再清一次
       btn.click();
-      await sleep(4000);
-      status(`已点击发布 ✓ 请稍候确认${cleaned ? "（已清除微博附加的「收起」）" : ""}`);
+
+      // 确认发布结果：编辑器被清空 / 「发布成功」提示，最长 45s
+      let published = false;
+      const confirmDeadline = Date.now() + 45000;
+      while (Date.now() < confirmDeadline) {
+        if (editor.isConnected && (editor.textContent || "").trim() === "") { published = true; break; }
+        const toast = Array.from(document.querySelectorAll("div, span, p")).find(
+          (e) => e.children.length === 0 && /发布成功|发送成功/.test(e.textContent || "")
+        );
+        if (toast) { published = true; break; }
+        await sleep(1000);
+      }
+      status(
+        published
+          ? `发布成功 ✓${cleaned ? "（已清除微博附加的「收起」）" : ""}`
+          : `已点击发布但未能确认结果，请到微博主页核实最新一条${cleaned ? "（已清除「收起」）" : ""}`,
+        !published
+      );
     } else {
       status(`内容已就绪，请手动点击发布${cleaned ? "（已清除微博附加的「收起」）" : ""}`);
     }
@@ -684,28 +700,49 @@ async function publishDouban(data) {
       );
 
     if (data.isAutoPublish) {
+      // ---- 提交阶段：自动点按钮 → Cmd+Enter 快捷键 → 请用户手动点，任一生效即可 ----
       status("等待发布按钮…（若约 10 秒后仍未继续，请用鼠标点一下发博框）");
-      let btn = null;
-      const deadline = Date.now() + 30000;
-      while (Date.now() < deadline) {
-        btn = findBtn();
-        if (btn) break;
-        if (findPublished()) break;
+      let clicked = false;
+      let published = findPublished();
+      const submitDeadline = Date.now() + 30000;
+      while (!published && Date.now() < submitDeadline) {
+        const btn = findBtn();
+        if (btn && !btn.disabled && btn.getAttribute("aria-disabled") !== "true") {
+          cleanCollapse(); // 折叠控件可能是编辑器展开后晚插入的，点击前再清一次
+          btn.click();
+          clicked = true;
+          break;
+        }
+        if (findPublished()) { published = true; break; }
         await sleep(500);
       }
-      if (!btn && findPublished()) {
-        return status("检测到「发布成功」提示 ✓（等待期间内容已发布）");
+      if (!clicked && !published) {
+        // 兜底：模拟 Cmd+Enter 提交（合成事件无默认插入行为，不会重复输入）
+        status("未找到发布按钮，尝试快捷键提交…");
+        editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true }));
+        editor.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", metaKey: true, bubbles: true }));
+        await sleep(3000);
+        published = findPublished();
       }
-      if (!btn) return status("未找到发布按钮（若页面改版请反馈 DOM 截图）", true);
-      let tries = 0;
-      while ((btn.disabled || btn.getAttribute("aria-disabled") === "true") && tries < 30) {
-        await sleep(1000);
-        tries++;
+
+      // ---- 确认阶段：盯成功信号（「发布成功」提示 / 编辑器被清空）最长 60s，含人工点发布的窗口 ----
+      if (!published) {
+        status(clicked ? "已点击发布，确认结果中…" : "请手动点一下「发布」按钮，我会确认结果…");
+        const confirmDeadline = Date.now() + 60000;
+        while (Date.now() < confirmDeadline) {
+          if (findPublished()) { published = true; break; }
+          if (editor.isConnected && editor.value === "") { published = true; break; }
+          await sleep(1000);
+        }
       }
-      cleanCollapse(); // 折叠控件可能是编辑器展开后晚插入的，点击前再清一次
-      btn.click();
-      await sleep(4000);
-      status(`已点击发布 ✓ 请稍候确认${cleaned ? "（已清除豆瓣附加的「收起」）" : ""}`);
+      if (published) {
+        status(`发布成功 ✓${clicked ? "" : "（检测到你已发布）"}${cleaned ? " 已清除「收起」" : ""}`);
+      } else {
+        status(
+          `未能确认发布结果（${clicked ? "已点击过发布按钮" : "自动提交未成功"}）。内容已填好，请到豆瓣主页核实最新一条；若未发出请手动点发布`,
+          true
+        );
+      }
     } else {
       status(`内容已就绪，请手动点击发布${cleaned ? "（已清除豆瓣附加的「收起」）" : ""}`);
     }
