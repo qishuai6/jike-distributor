@@ -662,32 +662,40 @@ async function publishDouban(data) {
     };
     const cleaned = cleanCollapse();
 
-    // 豆瓣发布按钮是 a.bn-flat 包 input[type=button]（文字在 value 属性，textContent 为空），
-    // 只扫 button/a.btn 的 textContent 永远落空 → 在编辑器邻近容器逐层向外找，value/textContent 双通道匹配
+    // 豆瓣发布按钮是 a.bn-flat 包 input[type=button]（文字在 value 属性，textContent 为空）。
+    // scope 必须全页：工具栏展开时豆瓣会重建编辑器区域 DOM，editor 引用随之脱离文档，
+    // 从它向上爬容器永远扫不到新树里的按钮（v0.2.0 前的 bug）→ 精确匹配防全页误伤
     const labelOf = (b) =>
       `${b.textContent || ""} ${b.value || ""} ${(b.getAttribute && b.getAttribute("value")) || ""}`;
     const isPublishLabel = (b) => {
       if (b.tagName === "A" && /^https?:/.test((b.getAttribute && b.getAttribute("href")) || "")) return false;
-      return /发布|发送|发广播/.test(labelOf(b)) && labelOf(b).trim().length <= 8;
+      return /^(发布|发送|发广播)$/.test(labelOf(b).trim());
     };
-    const findBtn = () => {
-      let scope = editor.parentElement;
-      for (let i = 0; i < 5 && scope; i++) {
-        const hit = Array.from(
-          scope.querySelectorAll(
-            'button, input[type="button"], input[type="submit"], [role="button"], a[class*="btn"], a[class*="bn"], a'
-          )
-        ).find(isPublishLabel);
-        if (hit) return hit;
-        scope = scope.parentElement;
-      }
-      return null;
-    };
+    const findBtn = () =>
+      Array.from(
+        document.querySelectorAll(
+          'button, input[type="button"], input[type="submit"], [role="button"], a[class*="btn"], a[class*="bn"]'
+        )
+      ).find(isPublishLabel);
+    // 等待期间用户可能已手动点发布：出现「发布成功」提示即视为完成
+    const findPublished = () =>
+      Array.from(document.querySelectorAll("div, span, p")).find(
+        (e) => e.children.length === 0 && /发布成功/.test(e.textContent || "")
+      );
 
     if (data.isAutoPublish) {
       status("等待发布按钮…（若约 10 秒后仍未继续，请用鼠标点一下发博框）");
-      // 工具栏若仍未展开，用户手动点击发博框即会渲染出按钮，30s 窗口内 MutationObserver 会立刻抓到
-      const btn = await waitFor(findBtn, 30000);
+      let btn = null;
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        btn = findBtn();
+        if (btn) break;
+        if (findPublished()) break;
+        await sleep(500);
+      }
+      if (!btn && findPublished()) {
+        return status("检测到「发布成功」提示 ✓（等待期间内容已发布）");
+      }
       if (!btn) return status("未找到发布按钮（若页面改版请反馈 DOM 截图）", true);
       let tries = 0;
       while ((btn.disabled || btn.getAttribute("aria-disabled") === "true") && tries < 30) {
